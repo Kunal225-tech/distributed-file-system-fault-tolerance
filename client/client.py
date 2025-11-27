@@ -6,16 +6,13 @@ import socket
 HOST = '127.0.0.1'
 PORT = 5000
 
-def send_hello():
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((HOST, PORT))
-
-    client_socket.send("HELLO".encode())
-    reply = client_socket.recv(1024).decode()
-
-    print("[CLIENT] Server says:", reply)
-    client_socket.close()
+def list_nodes():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((HOST, PORT))
+    s.send("LIST_NODES".encode())
+    print("[CLIENT] Active Nodes:", s.recv(1024).decode())
+    s.close()
 
 if __name__ == "__main__":
-    send_hello()
+    list_nodes()
 
