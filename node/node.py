@@ -1,6 +1,3 @@
-# Node server for Distributed File System (DFS)
-# Stores file chunks sent by master
-
 # node/node.py
 # Simple DFS Node: registers with master and sends heartbeats.
 
@@ -55,3 +52,4 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         print(f"\n[{node_id}] Shutting down.")
+
