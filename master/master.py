@@ -1,146 +1,81 @@
-# master.py — DFS Master Server with REST API
+# master/master.py
+# Simple DFS Master: tracks nodes and heartbeats, answers LIST_NODES.
 
 import socket
 import threading
 import time
-import os
-from flask import Flask, request, jsonify, send_file
 
 MASTER_HOST = "127.0.0.1"
 MASTER_PORT = 5000
-NODE_PORT_BASE = 6000
-HEARTBEAT_TIMEOUT = 10
-CHUNK_SIZE = 64 * 1024
+HEARTBEAT_TIMEOUT = 10  # seconds
 
+# node_id -> last_heartbeat_time
 active_nodes = {}
-node_ports = {}
-file_metadata = {}
 lock = threading.Lock()
 
-app = Flask(__name__)
 
-
-# ===========================
-#   HEARTBEAT MONITOR
-# ===========================
 def remove_dead_nodes():
+    """Background thread: remove nodes that stopped sending heartbeats."""
     while True:
         time.sleep(2)
+        now = time.time()
         with lock:
-            now = time.time()
-            for node, last_seen in list(active_nodes.items()):
+            for node_id, last_seen in list(active_nodes.items()):
                 if now - last_seen > HEARTBEAT_TIMEOUT:
-                    print(f"[MASTER] ❌ Node offline → Removing: {node}")
-                    del active_nodes[node]
-                    del node_ports[node]
+                    print(f"[MASTER] ❌ Node timeout → Removing: {node_id}")
+                    del active_nodes[node_id]
 
 
-def handle_node(conn):
-    while True:
-        try:
-            data = conn.recv(1024).decode()
-            if not data:
-                break
+def handle_client(conn, addr):
+    """Handle any incoming message (from node or client)."""
+    try:
+        data = conn.recv(1024).decode().strip()
+        if not data:
+            return
 
-            parts = data.split("::")
-            if parts[0] == "REGISTER":
-                node_id = parts[1]
-                port = int(parts[2])
-                with lock:
+        # Node registration: REGISTER::node1
+        if data.startswith("REGISTER::"):
+            node_id = data.split("::", 1)[1]
+            with lock:
+                active_nodes[node_id] = time.time()
+            print(f"[MASTER] 🟢 Node registered: {node_id}")
+
+        # Node heartbeat: HEARTBEAT::node1
+        elif data.startswith("HEARTBEAT::"):
+            node_id = data.split("::", 1)[1]
+            with lock:
+                if node_id in active_nodes:
                     active_nodes[node_id] = time.time()
-                    node_ports[node_id] = port
-                print(f"[MASTER] 🟢 Node Registered: {node_id}")
+            # no print every heartbeat to keep output clean
 
-            else:
-                node_id = data
-                with lock:
-                    active_nodes[node_id] = time.time()
+        # Client request: LIST_NODES
+        elif data == "LIST_NODES":
+            with lock:
+                nodes_list = ",".join(active_nodes.keys())
+            response = f"NODES::{nodes_list}"
+            conn.send(response.encode())
 
-        except:
-            break
-    conn.close()
+        # Unknown message → ignore
+        else:
+            print(f"[MASTER] Unknown message from {addr}: {data}")
 
-
-# ===========================
-#   REST API
-# ===========================
-
-@app.route("/api/nodes", methods=["GET"])
-def get_nodes():
-    return jsonify(list(active_nodes.keys()))
+    finally:
+        conn.close()
 
 
-@app.route("/api/upload", methods=["POST"])
-def upload_file():
-    file = request.files["file"]
-    filename = file.filename
-    chunk_index = 0
-
-    if not active_nodes:
-        return jsonify({"msg": "No active nodes available"}), 500
-
-    while True:
-        chunk = file.stream.read(CHUNK_SIZE)
-        if not chunk:
-            break
-
-        nodes_list = list(active_nodes.keys())
-        primary = nodes_list[chunk_index % len(nodes_list)]
-        send_chunk(primary, filename, chunk_index, chunk)
-
-        file_metadata.setdefault(filename, []).append((primary, chunk_index))
-        chunk_index += 1
-
-    print(f"[MASTER] 📁 Uploaded file: {filename}")
-    return jsonify({"msg": "File uploaded successfully"})
-
-
-@app.route("/api/download/<filename>", methods=["GET"])
-def download_file(filename):
-    if filename not in file_metadata:
-        return jsonify({"msg": "File not found"}), 404
-
-    output_file = f"download_{filename}"
-    with open(output_file, "wb") as f:
-        for node_id, chunk_index in file_metadata[filename]:
-            chunk = request_chunk(node_id, filename, chunk_index)
-            f.write(chunk)
-
-    return send_file(output_file, as_attachment=True)
-
-
-def send_chunk(node_id, filename, chunk_index, chunk_data):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((MASTER_HOST, node_ports[node_id]))
-    sock.send(f"{filename}||{chunk_index}||".encode() + chunk_data)
-    sock.close()
-
-
-def request_chunk(node_id, filename, chunk_index):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((MASTER_HOST, node_ports[node_id]))
-    sock.send(f"GET||{filename}||{chunk_index}".encode())
-    data = sock.recv(CHUNK_SIZE)
-    sock.close()
-    return data
-
-
-# ===========================
-#   MASTER START
-# ===========================
 def start_master():
+    """Start the master TCP server."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((MASTER_HOST, MASTER_PORT))
     server.listen(5)
     print(f"[MASTER] Running on {MASTER_HOST}:{MASTER_PORT}")
 
+    # Start timeout cleaner thread
     threading.Thread(target=remove_dead_nodes, daemon=True).start()
 
-    threading.Thread(target=lambda: app.run(port=8000, debug=False), daemon=True).start()
-
     while True:
-        conn, _ = server.accept()
-        threading.Thread(target=handle_node, args=(conn,)).start()
+        conn, addr = server.accept()
+        threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
 
 
 if __name__ == "__main__":
