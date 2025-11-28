@@ -1,57 +1,52 @@
-import requests
+# client/client.py
+# Simple DFS Client: asks master for list of active nodes.
 
-MASTER_URL = "http://127.0.0.1:5000"
+import socket
 
-def show_menu():
-    print("\n===== DFS CLIENT MENU =====")
-    print("1. Show Active Nodes")
-    print("2. Upload File")
-    print("3. Download File")
-    print("4. Exit")
-    return input("Enter your choice: ")
+MASTER_HOST = "127.0.0.1"
+MASTER_PORT = 5000
 
-def show_nodes():
+
+def ask_list_nodes():
+    """Send LIST_NODES to master and print result."""
     try:
-        res = requests.get(f"{MASTER_URL}/nodes")
-        print("\nActive Nodes:", res.json())
-    except:
-        print("⚠ Could not connect to Master!")
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((MASTER_HOST, MASTER_PORT))
+        s.send(b"LIST_NODES")
+        data = s.recv(1024).decode()
+        s.close()
 
-def upload_file():
-    filepath = input("Enter file path to upload: ")
-    try:
-        with open(filepath, "rb") as f:
-            files = {"file": f}
-            res = requests.post(f"{MASTER_URL}/upload", files=files)
-            print(res.text)
-    except:
-        print("⚠ File not found!")
-
-def download_file():
-    filename = input("Enter filename to download: ")
-
-    try:
-        res = requests.get(f"{MASTER_URL}/download/{filename}")
-        if res.status_code == 200:
-            with open("output_" + filename, "wb") as f:
-                f.write(res.content)
-            print("✔ File downloaded successfully!")
+        if data.startswith("NODES::"):
+            nodes_str = data.split("::", 1)[1]
+            if nodes_str.strip() == "":
+                print("No active nodes right now.")
+            else:
+                nodes = nodes_str.split(",")
+                print("Active nodes:")
+                for n in nodes:
+                    print("  -", n)
         else:
-            print("⚠ File not found in DFS!")
-    except:
-        print("⚠ Error contacting server!")
+            print("Unexpected response from master:", data)
+    except Exception as e:
+        print("Could not contact master:", e)
 
-if __name__ == "__main__":
+
+def main():
+    print("===== DFS CLIENT =====")
+    print("1. Show Active Nodes")
+    print("2. Exit")
+
     while True:
-        choice = show_menu()
+        choice = input("Enter your choice: ").strip()
         if choice == "1":
-            show_nodes()
+            ask_list_nodes()
         elif choice == "2":
-            upload_file()
-        elif choice == "3":
-            download_file()
-        elif choice == "4":
             print("Bye!")
             break
         else:
-            print("Invalid Input!")
+            print("Invalid option.")
+
+
+if __name__ == "__main__":
+    main()
+
