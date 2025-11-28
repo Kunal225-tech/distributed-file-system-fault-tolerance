@@ -1,1 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DFS Dashboard</title>
+</head>
+<body>
+    <h2>Distributed File System UI</h2>
+
+    <button onclick="showNodes()">Show Active Nodes</button>
+    <ul id="nodeList"></ul>
+
+    <br><hr>
+
+    <h3>Upload a File</h3>
+    <input type="file" id="fileInput">
+    <button onclick="uploadFile()">Upload</button>
+    <p id="uploadMsg"></p>
+
+    <br><hr>
+
+    <h3>Download File</h3>
+    <input type="text" id="fileName" placeholder="filename.ext">
+    <button onclick="downloadFile()">Download</button>
+
+    <script>
+        function showNodes() {
+            fetch("http://127.0.0.1:8000/api/nodes")
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById("nodeList").innerHTML =
+                        data.map(n => `<li>🟢 ${n}</li>`).join("");
+                });
+        }
+
+        function uploadFile() {
+            let fileInput = document.getElementById("fileInput").files[0];
+            let formData = new FormData();
+            formData.append("file", fileInput);
+
+            fetch("http://127.0.0.1:8000/api/upload", {
+                method: "POST",
+                body: formData
+            }).then(r => r.json())
+              .then(d => document.getElementById("uploadMsg").innerText = d.msg);
+        }
+
+        function downloadFile() {
+            let filename = document.getElementById("fileName").value;
+            window.location.href = `http://127.0.0.1:8000/api/download/${filename}`;
+        }
+    </script>
+</body>
+</html>
 
