@@ -1,7 +1,8 @@
 # Master server for Distributed File System (DFS)
 # Will handle metadata and coordination.
 
-import socket
+# Master server for Distributed File System (DFS)
+
 import socket
 import threading
 import time
@@ -16,8 +17,8 @@ node_ports = {}
 file_metadata = {}  # filename → [(node, chunk_index)]
 
 CHUNK_SIZE = 64 * 1024  # 64 KB
-
 lock = threading.Lock()
+
 
 def remove_dead_nodes():
     while True:
@@ -27,8 +28,9 @@ def remove_dead_nodes():
             for node, last_seen in list(active_nodes.items()):
                 if now - last_seen > HEARTBEAT_TIMEOUT:
                     print(f"[MASTER] ❌ Node timeout → Removing: {node}")
-                    del active_nodes[node]
-                    del node_ports[node]
+                    active_nodes.pop(node, None)
+                    node_ports.pop(node, None)
+
 
 def handle_node(conn, addr):
     while True:
@@ -38,15 +40,26 @@ def handle_node(conn, addr):
                 break
 
             parts = data.split("::")
+
+            # REGISTER message
             if parts[0] == "REGISTER":
                 node_id = parts[1]
                 port = int(parts[2])
                 with lock:
                     active_nodes[node_id] = time.time()
                     node_ports[node_id] = port
-                print(f"[MASTER] 🟢 Node Registered: {node_id} on port {port}")
+                print(f"[MASTER] 🟢 Node Registered: {node_id} (Port: {port})")
 
-            else:  # Heartbeat update
+            # NODE FILE CHUNK message
+            elif parts[0] == "FILE_CHUNK":
+                filename = parts[1]
+                chunk_index = int(parts[2])
+                node_id = parts[3]
+                file_metadata.setdefault(filename, []).append((node_id, chunk_index))
+                print(f"[MASTER] Stored metadata: {filename}, chunk {chunk_index} on {node_id}")
+
+            # Heartbeat
+            else:
                 node_id = data
                 with lock:
                     active_nodes[node_id] = time.time()
@@ -54,39 +67,6 @@ def handle_node(conn, addr):
         except:
             break
     conn.close()
-
-
-def distribute_chunks(filename):
-    print(f"[MASTER] Splitting file into chunks...")
-    chunk_nodes = []
-    chunk_index = 0
-
-    with open(filename, "rb") as f:
-        chunk = f.read(CHUNK_SIZE)
-        while chunk:
-            assigned_nodes = list(active_nodes.keys())[:3]  # 3 nodes but replicate only on first 2
-
-            # Store chunk metadata
-            file_metadata.setdefault(filename, []).append((assigned_nodes[:2], chunk_index))
-
-            # Send chunk to two nodes
-            for i, node in enumerate(assigned_nodes[:2]):
-                send_chunk(node, filename, chunk_index, chunk)
-
-            chunk_index += 1
-            chunk = f.read(CHUNK_SIZE)
-
-    print(f"[MASTER] ✔ File distributed successfully.")
-
-
-def send_chunk(node_id, filename, chunk_index, chunk_data):
-    port = node_ports[node_id]
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((MASTER_HOST, port))
-    data = f"{filename}||{chunk_index}||".encode() + chunk_data
-    sock.send(data)
-    sock.close()
-    print(f"[MASTER] Sent chunk {chunk_index} to {node_id}")
 
 
 def start_master():
