@@ -1,54 +1,116 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>DFS Dashboard</title>
+    <title>DFS Dashboard - Dark Mode</title>
+    <style>
+        body {
+            background-color: #0d0d0d;
+            color: #00ff9d;
+            font-family: Consolas, monospace;
+            text-align: center;
+        }
+        h1 {
+            font-size: 26px;
+            text-shadow: 0 0 10px #00ff9d;
+        }
+        .node-box {
+            display: inline-block;
+            background: #111;
+            padding: 15px;
+            margin: 10px;
+            border: 2px solid #00ff9d;
+            border-radius: 10px;
+            width: 150px;
+            font-size: 18px;
+        }
+        .online {
+            color: #00ff9d;
+        }
+        .offline {
+            color: #ff005e;
+        }
+        .button {
+            background-color: #00ff9d;
+            border: none;
+            padding: 10px;
+            margin: 10px;
+            width: 150px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #logs {
+            background: black;
+            width: 90%;
+            height: 200px;
+            margin: 20px auto;
+            padding: 10px;
+            color: #00ff9d;
+            border: 1px solid #00ff9d;
+            overflow-y: auto;
+            text-align: left;
+        }
+    </style>
 </head>
 <body>
-    <h2>Distributed File System UI</h2>
+    <h1>🚀 Distributed File System Dashboard 🚀</h1>
 
-    <button onclick="showNodes()">Show Active Nodes</button>
-    <ul id="nodeList"></ul>
+    <h2>Node Status</h2>
+    <div id="nodes"></div>
 
-    <br><hr>
+    <br><br>
 
-    <h3>Upload a File</h3>
-    <input type="file" id="fileInput">
-    <button onclick="uploadFile()">Upload</button>
-    <p id="uploadMsg"></p>
+    <input type="file" id="fileInput" class="button"><br>
+    <button onclick="uploadFile()" class="button">Upload File</button><br><br>
 
-    <br><hr>
+    <input type="text" id="fileName" placeholder="filename.ext" class="button">
+    <button onclick="downloadFile()" class="button">Download File</button>
 
-    <h3>Download File</h3>
-    <input type="text" id="fileName" placeholder="filename.ext">
-    <button onclick="downloadFile()">Download</button>
+    <h2>System Logs</h2>
+    <div id="logs"></div>
 
-    <script>
-        function showNodes() {
-            fetch("http://127.0.0.1:8000/api/nodes")
-                .then(r => r.json())
-                .then(data => {
-                    document.getElementById("nodeList").innerHTML =
-                        data.map(n => `<li>🟢 ${n}</li>`).join("");
+<script>
+    const API = "http://127.0.0.1:8000/api";
+
+    function log(msg) {
+        document.getElementById("logs").innerHTML += msg + "<br>";
+    }
+
+    function showNodes() {
+        fetch(`${API}/nodes`)
+            .then(r => r.json())
+            .then(data => {
+                let html = "";
+                data.forEach(n => {
+                    html += `<div class='node-box online'>🟢 ${n}</div>`;
                 });
-        }
+                document.getElementById("nodes").innerHTML = html;
+                log("Active nodes refreshed.");
+            })
+            .catch(() => log("Failed to fetch nodes ❌"));
+    }
 
-        function uploadFile() {
-            let fileInput = document.getElementById("fileInput").files[0];
-            let formData = new FormData();
-            formData.append("file", fileInput);
+    function uploadFile() {
+        let f = document.getElementById("fileInput").files[0];
+        if (!f) return;
+        let fd = new FormData();
+        fd.append("file", f);
 
-            fetch("http://127.0.0.1:8000/api/upload", {
-                method: "POST",
-                body: formData
-            }).then(r => r.json())
-              .then(d => document.getElementById("uploadMsg").innerText = d.msg);
-        }
+        fetch(`${API}/upload`, { method: "POST", body: fd })
+            .then(r => r.json())
+            .then(d => log("Uploaded: " + d.msg))
+            .catch(() => log("Upload failed ❌"));
+    }
 
-        function downloadFile() {
-            let filename = document.getElementById("fileName").value;
-            window.location.href = `http://127.0.0.1:8000/api/download/${filename}`;
-        }
-    </script>
+    function downloadFile() {
+        let file = document.getElementById("fileName").value;
+        if (!file) return;
+        window.location.href = `${API}/download/${file}`;
+        log("Download started...");
+    }
+
+    setInterval(showNodes, 3000);
+    showNodes();
+</script>
 </body>
 </html>
 
